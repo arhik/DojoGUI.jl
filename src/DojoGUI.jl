@@ -102,6 +102,7 @@ function addChild!(tNode::DojoNode, obj::Union{DojoNode, Dojo.Node})
 		return
 	end
 	if typeof(obj) == DojoNode
+		obj.parent = tNode
 		push!(tNode.childObjs, obj)
 	elseif typeof(obj) <: Dojo.Node
 		push!(tNode.childObjs, DojoNode(tNode, obj, Dojo.Node[]))
@@ -125,9 +126,14 @@ function removeChild!(tNode::DojoNode, obj::Dojo.Node)
 end
 
 function findTNode(tNode::DojoNode, idx::Int64; recursion=1)
-	if tNode.parent == nothing && length(tNode.childObjs) == 0 && recursion==1
+	if tNode.parent == nothing && length(tNode.childObjs) == 0
 		return tNode
 	elseif tNode.object.id == idx
+		return tNode
+	elseif tNode.parent != nothing && length(tNode.childObjs) == 0
+		while tNode.parent != nothing
+			tNode = tNode.parent
+		end
 		return tNode
 	else
 		for node in tNode.childObjs
@@ -139,7 +145,6 @@ function findTNode(tNode::DojoNode, idx::Int64; recursion=1)
 		end
 		# return findTNode(tNode.parent, idx; recursion=recursion)
 	end
-	findTNode(tNode.parent, idx; recursion=recursion+1)
 	# @error "Should not have fall through here"
 end
 
@@ -147,12 +152,10 @@ function buildTree(mechanism::Mechanism)
 	rootNode = DojoNode(nothing, nothing, Dojo.Node[])
 	tNode = rootNode
 	for (id, joint) in enumerate(mechanism.joints)
-		@info joint.parent_id, joint.child_id
 		tNode = findTNode(tNode, joint.parent_id)
 		pbody = get_body(mechanism, joint.parent_id)
 		cbody = get_body(mechanism, joint.child_id)
 		tNode.object == nothing && setObject!(tNode, pbody)
-		cbody.parent = pbody
 		addChild!(tNode, cbody)
 	end
 	return rootNode

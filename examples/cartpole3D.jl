@@ -1,3 +1,4 @@
+using Revise
 using DojoGUI
 using Dojo
 using Dojo: input_impulse!, clear_external_force!, update_state!
@@ -13,7 +14,6 @@ using DataStructures
 using Rotations
 
 
-mechanism = get_mechanism(:rhea)
 mechanism = get_mechanism(:cartpole3D)
 
 
