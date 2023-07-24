@@ -1,0 +1,12 @@
+name = "DojoGUI"
+uuid = "1d9101b1-aa69-44e7-a8bb-7af365bc94f3"
+authors = ["arhik <arhik23@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+Dojo = "ac60b53e-8d92-4c83-b960-e78698fa1916"
+DojoEnvironments = "8728bab7-e8ae-46fd-a1b6-a8c4d00f608e"
+WGPUCore = "53d714bf-0d76-4802-84b4-6cb75cca55f5"
+WGPUgfx = "02f56413-64a8-464d-a8fa-8dfc28b55f81"
