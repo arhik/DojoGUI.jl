@@ -13,44 +13,38 @@ using LinearAlgebra
 using DataStructures
 using Rotations
 
-
 mechanism = get_mechanism(:cartpole3D)
-
 
 robot = buildRobot(mechanism)
 
-
 WGPUCore.SetLogLevel(WGPUCore.WGPULogLevel_Off)
-canvas = WGPUCore.defaultCanvas(WGPUCore.WGPUCanvas)
-gpuDevice = WGPUCore.getDefaultDevice()
-
+scene = Scene()
+canvas = scene.canvas
+renderer = getRenderer(scene)
 
 camera = defaultCamera()
 light = defaultLighting()
+
+cube = WorldObject(
+	defaultWGPUMesh("$(pkgdir(WGPUgfx))/assets/cube.obj";scale=0.05f0),
+	RenderType(SURFACE | AXIS),
+	nothing,
+	nothing,
+	nothing,
+	nothing,
+)
+
 grid = defaultGrid()
 axis = defaultAxis()
 
+attachEventSystem(renderer)
 
-scene = Scene(
-	gpuDevice,
-	canvas,
-	camera,
-	light,
-	[],
-	repeat([nothing], 4)...
-)
-
-
-attachEventSystem(scene)
-
-
-addObject!(scene, grid)
-addObject!(scene, axis)
-addObject!(scene, robot)
-
+addObject!(renderer, grid)
+addObject!(renderer, axis)
+addObject!(renderer, cube)
+addObject!(renderer, robot)
 
 swapMatrix = [1 0 0 0; 0 0 1 0; 0 -1 0 0; 0 0 0 1] .|> Float32
-
 
 function initTransform!(wn::WorldNode{T}) where T<:Renderable
 	object = wn.object
@@ -68,7 +62,6 @@ function initTransform!(wn::WorldNode{T}) where T<:Renderable
 	end
 end
 
-
 function setTransform!(tNode::WorldNode, t)
 	tNode.object.uniformData = swapMatrix*t
 	if tNode.childObjs == nothing
@@ -78,7 +71,6 @@ function setTransform!(tNode::WorldNode, t)
 		# setTransform!(node, t)
 	# end
 end
-
 
 function stepTransform!(wn::WorldNode{T}) where T<:Renderable
 	object = wn.object
@@ -95,7 +87,6 @@ function stepTransform!(wn::WorldNode{T}) where T<:Renderable
 		stepTransform!(node)
 	end
 end
-
 
 function stepController!(mechanism)
 	try
@@ -119,7 +110,6 @@ function stepController!(mechanism)
 	end
 end
 
-
 bodies = mechanism.bodies
 origin = mechanism.origin
 
@@ -130,8 +120,10 @@ u0 = zeros(8)
 
 A, B = get_minimal_gradients!(mechanism, x0, u0)
 # Q = [1.0, 1.0, 1.0, 0.2, 0.2, 0.8, 0.002, 0.002, 0.002, 0.002] |> diagm
-# Q = [0.00001, 0.00001, 0.00001, 0.099, 0.099, 0.099, 0.0001, 0.0001, 0.00004, 0.00004] |> diagm
 Q = [0.00001, 0.00001, 0.00001, 0.099, 0.099, 0.099, 0.0001, 0.0001, 0.00004, 0.00004] |> diagm
+# Q = [0.00001, 0.00001, 0.00001, 0.0099, 0.0099, 0.0099, 0.0001, 0.0001, 0.00004, 0.00004] |> diagm
+# Q = [0.0001, 0.0001, 0.0001, 0.0099, 0.0099, 0.0099, 0.0001, 0.0001, 0.0001, 0.0001] |> diagm
+# Q = 1e-3.*ones(10) |> diagm
 
 x_goal = get_minimal_state(mechanism)[stateIdxs...]
 
@@ -139,7 +131,6 @@ actuators = [:left_wheel, :right_wheel]
 
 R = I(length(actuators))
 idxs = [DojoGUI.get_input_idx(mechanism, actuator) for actuator in actuators]
-
 
 function getNode(wn::WorldNode, name::Symbol)
 	body = wn.body
@@ -155,7 +146,6 @@ function getNode(wn::WorldNode, name::Symbol)
 	end
 end
 
-
 function controller!(mechanism, k)
 	x = get_minimal_state(mechanism)[stateIdxs...]
 	K = lqr(Discrete,A[stateIdxs..., stateIdxs...],B[stateIdxs..., [idxs...]],Q,R)
@@ -166,16 +156,36 @@ function controller!(mechanism, k)
     set_input!(rightWheel, [u[2]])
 end
 
+using CoordinateTransformations
+
+eyeMatrix = [1 0 0 0; 0 1 0 0; 0 0 -1 0; 0 0 0 1] .|> Float32
+
+function runApp(renderer)
+	init(renderer)
+	renderer(renderer)
+	deinit(renderer)
+end	
 
 function main()
 	camera.eye = [1.0, 0.5, 1.0]
+	# camera.eye = [0.0, 0.0, 0.0]
 	initialize!(mechanism, :cartpole3D; body_position=[0.0, 0.0, 0.0])
 	initTransform!(robot)
 	Dojo.initialize_simulation!(mechanism)
-
 	try
 		while !WindowShouldClose(canvas.windowRef[])
 			status = stepController!(mechanism)
+			# This section manages to attach camera to a body/object
+			# floatingBase = getNode(robot, :base_link)
+			# loc = floatingBase.body.state.x1
+			# rotMat = Matrix{Float32}(I, (4, 4))
+			# rotMat[1:3, 1:3] .= RotY(pi/3)
+			# rotMat = eyeMatrix*rotMat
+			# transformMatrix = floatingBase.object.uniformData*rotMat
+			# cube.uniformData = transformMatrix
+			# camera.lookat = cube.uniformData[1:3, 3]
+			# camera.eye = cube.uniformData[1:3, 4]
+			
 			stepTransform!(robot)
 			runApp(scene)
 			PollEvents()
@@ -184,6 +194,5 @@ function main()
 		WGPUCore.destroyWindow(canvas)
 	end
 end
-
 
 main()

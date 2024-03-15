@@ -1,3 +1,6 @@
+# This tries hierarchical control strategy ...
+
+using Revise
 using DojoGUI
 using Dojo
 using Dojo: input_impulse!, clear_external_force!, update_state!
@@ -12,23 +15,28 @@ using LinearAlgebra
 using DataStructures
 using Rotations
 
-
-mechanism = get_mechanism(:rhea)
-
+mechanism = get_mechanism(:cartpole3D)
 
 robot = buildRobot(mechanism)
-
 
 WGPUCore.SetLogLevel(WGPUCore.WGPULogLevel_Off)
 canvas = WGPUCore.defaultCanvas(WGPUCore.WGPUCanvas)
 gpuDevice = WGPUCore.getDefaultDevice()
 
-
 camera = defaultCamera()
 light = defaultLighting()
+
+cube = WorldObject(
+	defaultWGPUMesh("$(pkgdir(WGPUgfx))/assets/cube.obj";scale=0.05f0),
+	RenderType(SURFACE | AXIS),
+	nothing,
+	nothing,
+	nothing,
+	nothing,
+)
+
 grid = defaultGrid()
 axis = defaultAxis()
-
 
 scene = Scene(
 	gpuDevice,
@@ -39,17 +47,14 @@ scene = Scene(
 	repeat([nothing], 4)...
 )
 
-
 attachEventSystem(scene)
-
 
 addObject!(scene, grid)
 addObject!(scene, axis)
+addObject!(scene, cube)
 addObject!(scene, robot)
 
-
 swapMatrix = [1 0 0 0; 0 0 1 0; 0 -1 0 0; 0 0 0 1] .|> Float32
-
 
 function initTransform!(wn::WorldNode{T}) where T<:Renderable
 	object = wn.object
@@ -67,7 +72,6 @@ function initTransform!(wn::WorldNode{T}) where T<:Renderable
 	end
 end
 
-
 function setTransform!(tNode::WorldNode, t)
 	tNode.object.uniformData = swapMatrix*t
 	if tNode.childObjs == nothing
@@ -77,7 +81,6 @@ function setTransform!(tNode::WorldNode, t)
 		# setTransform!(node, t)
 	# end
 end
-
 
 function stepTransform!(wn::WorldNode{T}) where T<:Renderable
 	object = wn.object
@@ -95,10 +98,10 @@ function stepTransform!(wn::WorldNode{T}) where T<:Renderable
 	end
 end
 
-
 function stepController!(mechanism)
 	try
-		controller!(mechanism, 0)
+		positionController!(mechanism, 0)
+		stabilityController!(mechanism, 0)
 		for joint in mechanism.joints
 			input_impulse!(joint, mechanism)
 		end
@@ -107,8 +110,7 @@ function stepController!(mechanism)
 			clear_external_force!(body) 
 		end
 		if status == :failed
-			@info "Solver failed with status :failed"
-			return false
+			@error "Solver Status :failed"
 		else
 			for body in mechanism.bodies
 				update_state!(body, mechanism.timestep)
@@ -119,27 +121,38 @@ function stepController!(mechanism)
 	end
 end
 
-
 bodies = mechanism.bodies
 origin = mechanism.origin
 
 # ### Controller
-stateIdxs = [4:6..., 11:16...]
-x0 = get_minimal_state(mechanism)
-u0 = zeros(12)
+# stateIdxs = [5, 11, 14, 16] # θ, θ\dot, v, ω̇
+stabilityStateIdxs = [5, 11, 14, 16] # θ, θ\dot, v, w are stability state indices
+# positionStateIdxs = [1, 2, 3] # direct position state indices hack
+positionStateIdxs = [13, 15, 14, 16] # lθ, r0 are position state indices
+x0 = zeros(16)
+u0 = zeros(8)
 
 A, B = get_minimal_gradients!(mechanism, x0, u0)
 # Q = [1.0, 1.0, 1.0, 0.2, 0.2, 0.8, 0.002, 0.002, 0.002, 0.002] |> diagm
-# Q = [0.0002, 0.0002, 0.0002, 0.099, 0.099, 0.0004, 0.0004, 0.00004, 0.00004] |> diagm
-Q = 0.001.*ones(length(stateIdxs)) |> diagm
+# Q = [0.1, 0.01, 0.01, 0.01] |> diagm
+# Q = [0.00001, 0.00001, 0.00001, 0.0099, 0.0099, 0.0099, 0.0001, 0.0001, 0.00004, 0.00004] |> diagm
+# Q = [0.0001, 0.0001, 0.0001, 0.0099, 0.0099, 0.0099, 0.0001, 0.0001, 0.0001, 0.0001] |> diagm
+PQ = 1e-4*ones(length(positionStateIdxs)) |> diagm
+SQ = 1e-3*ones(length(stabilityStateIdxs)) |> diagm
 
-x_goal = get_minimal_state(mechanism)[stateIdxs]
+# Q = [0.1, 0.1, 1.2, 1.2] |> diagm
 
-actuators = [:left_wheel, :right_wheel, :left_hip, :right_hip, :left_knee, :right_knee]
+x_goal = zeros(size(stabilityStateIdxs))
+# x_goal[3] = 0.1
 
-R = I(length(actuators))
+actuators = [:left_wheel, :right_wheel]
+
+PR = I(2) # TODO hardcoded
+SR = 0.1*I(length(actuators))
+
 idxs = [DojoGUI.get_input_idx(mechanism, actuator) for actuator in actuators]
-
+SK = lqr(Discrete,A[stabilityStateIdxs, stabilityStateIdxs],B[stabilityStateIdxs, [idxs...]],SQ,SR)
+PK = lqr(Discrete,A[positionStateIdxs, positionStateIdxs],B[positionStateIdxs, [idxs...]],PQ,PR)
 
 function getNode(wn::WorldNode, name::Symbol)
 	body = wn.body
@@ -155,45 +168,54 @@ function getNode(wn::WorldNode, name::Symbol)
 	end
 end
 
+leftWheel = get_joint(mechanism, :left_wheel)
+rightWheel = get_joint(mechanism, :right_wheel)
 
-function controller!(mechanism, k)
-	x = get_minimal_state(mechanism)[stateIdxs]
-	K = lqr(Discrete,A[stateIdxs, stateIdxs],B[stateIdxs, [idxs...]],Q,R)
-    u = K * (x - x_goal)
-    leftWheel = get_joint(mechanism, :left_wheel)
-    rightWheel = get_joint(mechanism, :right_wheel)
-    leftHip = get_joint(mechanism, :left_hip)
-    rightHip = get_joint(mechanism, :right_hip)
-    leftKnee = get_joint(mechanism, :left_knee)
-    rightKnee = get_joint(mechanism, :right_knee)
-    set_input!(leftWheel, [u[1]])
-    set_input!(rightWheel, [u[2]])
-    # set_input!(leftHip, [u[3]])
-    # set_input!(rightHip, [u[4]])
-    # set_input!(leftKnee, [u[5]])
-    # set_input!(rightKnee, [u[6]])
+
+function positionController!(mechanism, k)
+	p_goal = [1.2, 1.2, 0, 0]
+	x = get_minimal_state(mechanism)[positionStateIdxs]
+	u = -PK*(x - p_goal)
+	u0[idxs] .= [u[1], u[2]]
+	set_input!(mechanism, u0)
 end
 
+function stabilityController!(mechanism, k)
+	x = get_minimal_state(mechanism)[stabilityStateIdxs]
+	# vl = 0.1*x[3]# + rand()
+	# vr = 0.1*x[4]# + rand()
+	# v = (vr + vl)/2
+	# w = (vr - vl)/0.2
+	# x[end-1] = v
+	# x[end] = w
+    u = -SK * (x - x_goal)
+    u0[idxs] .= u
+    set_input!(mechanism, -u0)
+end
+
+using CoordinateTransformations
+
+eyeMatrix = [1 0 0 0; 0 1 0 0; 0 0 -1 0; 0 0 0 1] .|> Float32
 
 function main()
 	camera.eye = [1.0, 0.5, 1.0]
-	initialize!(mechanism, :rhea; body_position=[0.0, 0.0, 0.0])
+	initialize!(mechanism, :cartpole3D; body_position=[0.0, 0.0, -0.50])
 	initTransform!(robot)
 	Dojo.initialize_simulation!(mechanism)
-
 	try
 		while !WindowShouldClose(canvas.windowRef[])
-			stepController!(mechanism)
+			status = stepController!(mechanism)
 			# This section manages to attach camera to a body/object
-			floatingBase = getNode(robot, :base_link)
-			loc = floatingBase.body.state.x1
-			rotMat = Matrix{Float32}(I, (4, 4))
-			rotMat[1:3, 1:3] .= RotY(pi/3)
-			rotMat = eyeMatrix*rotMat
-			transformMatrix = floatingBase.object.uniformData*rotMat
-			cube.uniformData = transformMatrix
-			camera.lookat = cube.uniformData[1:3, 3]
-			camera.eye = cube.uniformData[1:3, 4]
+			# floatingBase = getNode(robot, :base_link)
+			# loc = floatingBase.body.state.x1
+			# rotMat = Matrix{Float32}(I, (4, 4))
+			# rotMat[1:3, 1:3] .= RotY(pi/3)
+			# rotMat = eyeMatrix*rotMat
+			# transformMatrix = floatingBase.object.uniformData*rotMat
+			# cube.uniformData = transformMatrix
+			# camera.lookat = cube.uniformData[1:3, 3]
+			# camera.eye = cube.uniformData[1:3, 4]
+			
 			stepTransform!(robot)
 			runApp(scene)
 			PollEvents()
@@ -202,6 +224,5 @@ function main()
 		WGPUCore.destroyWindow(canvas)
 	end
 end
-
 
 main()
