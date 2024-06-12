@@ -224,14 +224,14 @@ function WGPUgfx.compileShaders!(gpuDevice, scene::Scene, wn::WorldNode; binding
 	end
 end
 
-function WGPUgfx.prepareObject(gpuDevice::GPUDevice, wn::WorldNode)
+function WGPUgfx.prepareObject(gpuDevice::WGPUCore.GPUDevice, wn::WorldNode)
 	WGPUgfx.prepareObject(gpuDevice, wn.renderObj)
 	for node in wn.childObjs
 		WGPUgfx.prepareObject(gpuDevice, node.renderObj)
 	end
 end
 
-function WGPUgfx.preparePipeline(gpuDevice::GPUDevice, renderer::Renderer, wn::WorldNode; binding=2)
+function WGPUgfx.preparePipeline(gpuDevice::WGPUCore.GPUDevice, renderer::Renderer, wn::WorldNode; binding=2)
 	WGPUgfx.preparePipeline(gpuDevice, renderer, wn.renderObj, binding=binding)
 	for node in wn.childObjs
 		WGPUgfx.preparePipeline(gpuDevice, renderer, node.renderObj; binding=binding)
