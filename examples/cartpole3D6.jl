@@ -266,12 +266,12 @@ camera = scene.camera
 
 function runApp(renderer)
 	init(renderer)
-	render(renderer)
+	WGPUgfx.render(renderer)
 	deinit(renderer)
 end
 
 function main()
-	setPositionKey(scene)
+	#setPositionKey(scene)
 	global gx, count, gt, bodyPosition
 	gx .= bodyPosition[1:2]
 	gt = 0.0f0

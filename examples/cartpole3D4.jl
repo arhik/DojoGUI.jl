@@ -22,8 +22,9 @@ mechanism = get_mechanism(:cartpole3D)
 robot = buildRobot(mechanism)
 
 WGPUCore.SetLogLevel(WGPUCore.WGPULogLevel_Off)
-canvas = WGPUCore.defaultCanvas(WGPUCore.WGPUCanvas)
-gpuDevice = WGPUCore.getDefaultDevice()
+
+scene = Scene()
+renderer = getRenderer(scene)
 
 camera = defaultCamera()
 light = defaultLighting()
@@ -40,21 +41,12 @@ cube = WorldObject(
 grid = defaultGrid()
 axis = defaultAxis()
 
-scene = Scene(
-	gpuDevice,
-	canvas,
-	camera,
-	light,
-	[],
-	repeat([nothing], 4)...
-)
+attachEventSystem(renderer)
 
-attachEventSystem(scene)
-
-addObject!(scene, grid)
-addObject!(scene, axis)
-addObject!(scene, cube)
-addObject!(scene, robot)
+addObject!(renderer, grid)
+addObject!(renderer, axis)
+addObject!(renderer, cube)
+addObject!(renderer, robot)
 
 swapMatrix = [1 0 0 0; 0 0 1 0; 0 -1 0 0; 0 0 0 1] .|> Float32
 

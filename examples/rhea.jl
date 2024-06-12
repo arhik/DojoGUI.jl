@@ -1,3 +1,4 @@
+using Revise
 using DojoGUI
 using Dojo
 using Dojo: input_impulse!, clear_external_force!, update_state!
@@ -20,32 +21,28 @@ robot = buildRobot(mechanism)
 
 
 WGPUCore.SetLogLevel(WGPUCore.WGPULogLevel_Off)
-canvas = WGPUCore.defaultCanvas(WGPUCore.WGPUCanvas)
-gpuDevice = WGPUCore.getDefaultDevice()
 
+scene = Scene()
+canvas = scene.canvas
+gpuDevice = scene.gpuDevice
+
+renderer = getRenderer(scene)
 
 camera = defaultCamera()
 light = defaultLighting()
 grid = defaultGrid()
 axis = defaultAxis()
 
-
-scene = Scene(
-	gpuDevice,
-	canvas,
-	camera,
-	light,
-	[],
-	repeat([nothing], 4)...
-)
+setfield!(camera, :id, 1)
+scene.cameraSystem = CameraSystem([camera,])
 
 
-attachEventSystem(scene)
+attachEventSystem(renderer)
 
 
-addObject!(scene, grid)
-addObject!(scene, axis)
-addObject!(scene, robot)
+addObject!(renderer, grid)
+addObject!(renderer, axis)
+addObject!(renderer, robot)
 
 
 swapMatrix = [1 0 0 0; 0 0 1 0; 0 -1 0 0; 0 0 0 1] .|> Float32
@@ -174,6 +171,11 @@ function controller!(mechanism, k)
     # set_input!(rightKnee, [u[6]])
 end
 
+function runApp(renderer)
+	init(renderer)
+	WGPUgfx.render(renderer)
+	deinit(renderer)
+end
 
 function main()
 	camera.eye = [1.0, 0.5, 1.0]
@@ -189,13 +191,9 @@ function main()
 			loc = floatingBase.body.state.x1
 			rotMat = Matrix{Float32}(I, (4, 4))
 			rotMat[1:3, 1:3] .= RotY(pi/3)
-			rotMat = eyeMatrix*rotMat
 			transformMatrix = floatingBase.object.uniformData*rotMat
-			cube.uniformData = transformMatrix
-			camera.lookat = cube.uniformData[1:3, 3]
-			camera.eye = cube.uniformData[1:3, 4]
 			stepTransform!(robot)
-			runApp(scene)
+			runApp(renderer)
 			PollEvents()
 		end
 	finally

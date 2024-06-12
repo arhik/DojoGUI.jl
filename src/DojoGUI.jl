@@ -224,24 +224,24 @@ function WGPUgfx.compileShaders!(gpuDevice, scene::Scene, wn::WorldNode; binding
 	end
 end
 
-function WGPUgfx.prepareObject(gpuDevice, wn::WorldNode)
-	WGPUgfx.prepareObject(gpuDevice, wn.object)
+function WGPUgfx.prepareObject(gpuDevice::GPUDevice, wn::WorldNode)
+	WGPUgfx.prepareObject(gpuDevice, wn.renderObj)
 	for node in wn.childObjs
-		WGPUgfx.prepareObject(gpuDevice, node)
+		WGPUgfx.prepareObject(gpuDevice, node.renderObj)
 	end
 end
 
-function WGPUgfx.preparePipeline(gpuDevice, scene, wn::WorldNode; binding=2)
-	WGPUgfx.preparePipeline(gpuDevice, scene, wn.object; binding=binding)
+function WGPUgfx.preparePipeline(gpuDevice::GPUDevice, renderer::Renderer, wn::WorldNode; binding=2)
+	WGPUgfx.preparePipeline(gpuDevice, renderer, wn.renderObj, binding=binding)
 	for node in wn.childObjs
-		WGPUgfx.preparePipeline(gpuDevice, scene, node; binding=binding)
+		WGPUgfx.preparePipeline(gpuDevice, renderer, node.renderObj; binding=binding)
 	end
 end
 
 function WGPUgfx.render(renderPass::WGPUCore.GPURenderPassEncoder, renderPassOptions, wn::WorldNode)
-	WGPUgfx.render(renderPass, renderPassOptions, wn.object)
+	WGPUgfx.render(renderPass, renderPassOptions, wn.renderObj)
 	for node in wn.childObjs
-		WGPUgfx.render(renderPass, renderPassOptions, node)
+		WGPUgfx.render(renderPass, renderPassOptions, node.renderObj)
 	end
 end
 
