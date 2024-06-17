@@ -245,4 +245,24 @@ function WGPUgfx.render(renderPass::WGPUCore.GPURenderPassEncoder, renderPassOpt
 	end
 end
 
+function WGPUgfx.addObject!(renderer::WGPUgfx.Renderer, obj::WorldNode{T}, camera::WGPUgfx.Camera) where T<:Renderable
+	scene = renderer.scene
+	setup(renderer, obj.object, camera)
+	push!(scene.objects, obj)
+	for obj in obj.childObjs
+		addObject!(renderer, obj, camera)
+	end
+end
+
+function WGPUgfx.addObject!(renderer::WGPUgfx.Renderer, obj::WorldNode{T}) where T<:Renderable
+	scene = renderer.scene
+	for camera in scene.cameraSystem
+		setup(renderer, obj.object, camera)
+	end
+	push!(scene.objects, obj.object)
+	for obj in obj.childObjs
+		addObject!(renderer, obj)
+	end
+end
+
 end # module DojoGUI
